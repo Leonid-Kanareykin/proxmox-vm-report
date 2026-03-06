@@ -21,7 +21,6 @@
              cluster https://proxmox-dc2.infra.company.com/
             hosts:
               proxmox-01.dc2.company.com:
-
  -----------------------------------------------------------------------------
  Key features:
  - connecting using SSH to one or many hosts and cluster from yaml inventory file
