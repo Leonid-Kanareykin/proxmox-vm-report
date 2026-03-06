@@ -1,0 +1,25 @@
+proxmox:
+  children:
+    proxmox_dc1:
+      children:
+        proxmox_dc1_cluster1: # cluster 1 in dc1
+          hosts:
+            prx-host01.dc1.company.com:
+            prx-host02.dc1.company.com:
+            prx-host03.dc1.company.com:
+            prx-host04.dc1.company.com:
+            prx-host05.dc1.company.com:
+        cluster2_pve_dc1: # cluster 
+          hosts:
+            px-cluster2.dc1.company.com:
+    proxmox_dc2:
+      children:
+        proxmox_dc2_cluster1: # cluster 1 in dc2
+          hosts:
+            prx-host01.dc2.company.com:
+            prx-host02.dc2.company.com:
+            prx-host03.dc2.company.com:
+            prx-host04.dc2.company.com:
+            prx-host05.dc2.company.com: 
+        cluster2_pve_dc2: # cluster 2 in dc2
+            prx-host01.dc2.company.com:
