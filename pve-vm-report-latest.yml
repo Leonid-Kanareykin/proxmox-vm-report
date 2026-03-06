@@ -1,0 +1,174 @@
+---
+# =============================================================================
+# PLAYBOOK: Generate Proxmox VM Report
+# -----------------------------------------------------------------------------
+# Author: Leonid Kanareykin, itmanz@gmail.com, telegram: @itmanz93
+# ----------------------------------------------------------------
+# This playbook connects to all Proxmox nodes, retrieves detailed VM information
+# (including OS type from config, OS version from QEMU agent, pool, tags, and
+# resource usage), and compiles a timestamped CSV report.
+# !!! Tested with inventory file in such yaml format:
+# proxmox:
+#    children:
+#      proxmox_dc1:
+#        children:
+#          proxmox_dc1_cluster1:
+#            # cluster https://proxmox-dc1.infra.company.com/
+#            hosts:
+#              proxmox-01.dc1.wb-bank.ru:
+#         teleport_dc1_cluster2:
+#        children:
+#          proxmox_dc2_cluster1:
+#            # cluster https://proxmox-dc2.infra.company.com/
+#            hosts:
+#              proxmox-01.dc2.comapny.com:
+# ------------------------------------------------------------------------------
+# Key features:
+# - Parallel per‑VM processing on each node (using xargs -P)
+# - Falls back to config 'ostype' if QEMU agent is unavailable
+# - Converts memory/disk values from bytes to gigabytes (2 decimals)
+# - Adds a header row with user‑friendly column names
+# - No temporary files on the control node – everything assembled in memory
+# =============================================================================
+
+- name: Generate Proxmox VM report (in‑memory assembly)
+  hosts: all
+  gather_facts: true
+  become: true
+  strategy: linear
+
+  vars:
+    # Unique timestamp based on epoch seconds (ensures uniqueness)
+    timestamp: "{{ ansible_date_time.epoch }}"
+    # Final filename: vm_report_YYYYMMDD_HHMMSS.csv
+    report_file: "vm_report_{{ ansible_date_time.date | replace('-', '') }}_{{ ansible_date_time.time | replace(':', '') }}.csv"
+
+  tasks:
+  # -------------------------------------------------------------------------
+  # 1. Ensure jq is installed on each Proxmox node (required for JSON parsing)
+  # -------------------------------------------------------------------------
+  - name: Ensure jq is installed
+    ansible.builtin.package:
+      name: jq
+      state: present
+    when: ansible_os_family != "Windows"
+
+  # -------------------------------------------------------------------------
+  # 2. On each Proxmox node, generate CSV lines for all its VMs
+  #    - Fetches cluster‑wide VM info (pool, tags) once
+  #    - Lists local VMs with basic attributes
+  #    - Processes each VM in parallel (xargs -P)
+  #    - Outputs one CSV line per VM (memory/disk in GB)
+  # -------------------------------------------------------------------------
+  - name: Generate CSV lines (parallel per VM)
+    ansible.builtin.shell: |
+      set -eo pipefail
+      node="{{ ansible_hostname }}"
+      groups="{{ group_names | join(':') }}"
+
+      # Create temporary files on this node (will be deleted)
+      tmp_cluster=$(mktemp)
+      tmp_vmlist=$(mktemp)
+
+      # Fetch cluster‑wide VM info (pool, tags) – one API call per node
+      pvesh get /cluster/resources --type vm --output-format json > "$tmp_cluster" 2>/dev/null || echo '[]' > "$tmp_cluster"
+
+      # Get list of VMs on this node with essential fields (tab‑separated)
+      pvesh get /nodes/$node/qemu --output-format json \
+        | jq -r '.[] | [.vmid, .name, .status, .cpus, .maxmem, .mem, .maxdisk] | @tsv' > "$tmp_vmlist"
+
+      export node groups tmp_cluster
+
+      # Define function to process one VM (receives one TSV line)
+      process_vm() {
+        IFS=$'\t' read -r vmid name status cpus maxmem mem maxdisk <<< "$1"
+
+        # Extract pool and tags for this VM from cluster info
+        cluster_info=$(jq -c ".[] | select(.vmid == $vmid)" "$tmp_cluster")
+        pool=$(echo "$cluster_info" | jq -r '.pool // ""')
+        tags=$(echo "$cluster_info" | jq -r '.tags // ""')
+
+        # Get VM configuration ostype (always used for OS Type)
+        config_ostype=$(pvesh get /nodes/$node/qemu/$vmid/config --output-format json 2>/dev/null | jq -r '.ostype? // ""')
+
+        # Get QEMU agent OS info (if available)
+        agent_info=$(pvesh get /nodes/$node/qemu/$vmid/agent/get-osinfo --output-format json 2>/dev/null || echo '{}')
+        agent_pretty_name=$(echo "$agent_info" | jq -r '.result."pretty-name"? // ""')
+
+        # OS Type = config ostype (always)
+        os_type="$config_ostype"
+        # OS Version = agent pretty name (if any), otherwise empty
+        if [ -n "$agent_pretty_name" ]; then
+            os_version="$agent_pretty_name"
+        else
+            os_version=""
+        fi
+
+        # Output a single CSV row (jq handles quoting)
+        jq -rn \
+          --arg groups "$groups" \
+          --arg host "$node" \
+          --arg vmid "$vmid" \
+          --arg name "$name" \
+          --arg status "$status" \
+          --arg cpus "$cpus" \
+          --arg maxmem "$maxmem" \
+          --arg mem "$mem" \
+          --arg maxdisk "$maxdisk" \
+          --arg os_type "$os_type" \
+          --arg os_version "$os_version" \
+          --arg pool "$pool" \
+          --arg tags "$tags" \
+          '[$groups, $host, $vmid, $name, $status, $cpus,
+            ($maxmem | tonumber? // 0 | ./1073741824 | .*100 | round/100),
+            ($mem | tonumber? // 0     | ./1073741824 | .*100 | round/100),
+            ($maxdisk | tonumber? // 0 | ./1073741824 | .*100 | round/100),
+            $os_type, $os_version, $pool, $tags] | @csv'
+      }
+      export -f process_vm
+
+      # Run process_vm in parallel (one job per CPU core) on each VM line
+      cat "$tmp_vmlist" | xargs -P 0 -I {} bash -c 'process_vm "$@"' _ {}
+
+      # Clean up temporary files
+      rm -f "$tmp_cluster" "$tmp_vmlist"
+    args:
+      executable: /bin/bash
+    register: vm_data
+    changed_when: false
+
+  # -------------------------------------------------------------------------
+  # LOCALHOST TASKS (run on Ansible control node, no sudo)
+  # -------------------------------------------------------------------------
+
+  # 3. Combine all per‑host CSV outputs into one string and prepend the header
+  - name: Combine all CSV data and prepend header
+    ansible.builtin.set_fact:
+      final_csv: "{{ header + '
+
+        ' + (ansible_play_hosts | map('extract', hostvars, ['vm_data', 'stdout']) | select('defined') | map('trim') | join('
+
+        ')) }}"
+    vars:
+      header: "Ansible groups,Node,VMID,VM name,Status,CPU (cores),RAM allocated (GB),RAM used (GB),All disks size (GB),OS Type,OS Version (agent),Pool,Tags"
+    delegate_to: localhost
+    become: false
+    run_once: true
+
+  # 4. Write the final CSV content to a timestamped file
+  - name: Write final CSV report
+    ansible.builtin.copy:
+      content: "{{ final_csv }}"
+      dest: "{{ report_file }}"
+      mode: '0644'
+    delegate_to: localhost
+    become: false
+    run_once: true
+
+  # 5. Display the location of the generated report
+  - name: Display report location
+    ansible.builtin.debug:
+      msg: "Report generated: {{ report_file }}"
+    delegate_to: localhost
+    become: false
+    run_once: true
