@@ -2,9 +2,10 @@
  -----------------------------------------------------------------------------
  Author: Leonid Kanareykin, itmanz@gmail.com, telegram: @itmanz93
  ----------------------------------------------------------------
- This playbook connects to all Proxmox nodes, retrieves detailed VM informatio
- (including OS type from config, OS version from QEMU agent, pool, tags, and
- resource usage), and compiles a timestamped CSV report.
+ This playbook connects to all Proxmox nodes and retrieves detailed VM information:
+ Ansible groups,Node,VMID,VM name,Status,CPU (cores),RAM allocated (GB),RAM used (GB),All disks size (GB),OS Type,OS Version (agent),Pool,Tags
+ (including OS type from config, OS version from QEMU agent, pool, tags), and compiles a timestamped CSV report.
+ 
  !!! Tested with inventory file in such yaml format:
  proxmox:
     children:
@@ -20,10 +21,15 @@
              cluster https://proxmox-dc2.infra.company.com/
             hosts:
               proxmox-01.dc2.company.com:
+
  -----------------------------------------------------------------------------
  Key features:
+ - generate CSV files with Ansible groups,Node,VMID,VM name,Status,CPU (cores),RAM allocated (GB),RAM used (GB),All disks size (GB),OS Type,OS Version (agent),Pool,Tags
+ - connect using SSH
+ - retrieve info from multiple cluster and hosts
+ - no needed API keys to simplify many API keys generating in environment with high number of clusters because script uses your SSH account and comand line commands like pvesh which in fact uses API
  - Parallel per‑VM processing on each node (using xargs -P)
- - Falls back to config 'ostype' if QEMU agent is unavailable
+ - Get 'ostype' from VMs config if QEMU agent is unavailable
  - Converts memory/disk values from bytes to gigabytes (2 decimals)
  - Adds a header row with user‑friendly column names
  - No temporary files on the control node – everything assembled in memory
