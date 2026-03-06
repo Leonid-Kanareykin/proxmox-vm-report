@@ -12,13 +12,11 @@
       proxmox_dc1:
         children:
           proxmox_dc1_cluster1:
-             cluster https://proxmox-dc1.infra.company.com/
             hosts:
               proxmox-01.dc1.wb-bank.ru:
          proxmox_dc1_cluster2:
         children:
           proxmox_dc2_cluster1:
-             cluster https://proxmox-dc2.infra.company.com/
             hosts:
               proxmox-01.dc2.company.com:
  -----------------------------------------------------------------------------
