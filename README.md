@@ -1,4 +1,4 @@
-### PLAYBOOK: Generate Proxmox VM Report
+## PLAYBOOK: Generate Proxmox VM Report
  -----------------------------------------------------------------------------
  Author: Leonid Kanareykin, itmanz@gmail.com, telegram: @itmanz93
  ----------------------------------------------------------------
@@ -8,7 +8,7 @@
  
  !!! Tested with example inventory file in such yaml format: https://github.com/Leonid-Kanareykin/proxmox-vm-report/blob/main/inventory-example.yml
  
- Key features:
+ ### Key features:
  - connecting using SSH to one or many hosts and cluster from yaml inventory file
  - generate CSV file with Ansible groups,Node,VMID,VM name,Status,CPU (cores),RAM allocated (GB),RAM used (GB),All disks size (GB),OS Type,OS Version (agent),Pool,Tags
  - retrieve info from multiple cluster and hosts
@@ -20,9 +20,9 @@
  - No temporary files on the control node – everything assembled in memory
  =============================================================================
 
-### To run on all inventory
+### To run on all inventory:
 ansible-playbook -i inventory-example.yml /playbooks/pve-vm-report-latest.yml
 
-### To run on some clusters or one cluster
+### To run on some clusters or one cluster:
 ansible-playbook -i inventory-example.yml /playbooks/pve-vm-report-latest.yml --limit proxmox_dc1_cluster1,cluster2_pve_dc2
 
