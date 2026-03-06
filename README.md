@@ -6,20 +6,8 @@
  Ansible groups  with all children (usually: group, DC, cluster), Proxmox Node name, VMID, VM name, Power status, CPU (cores), RAM allocated (GB), RAM used (GB), All disks size (GB), OS Type, OS Version (agent), Pool,Tags
  (including OS type from config, OS version from QEMU agent, pool, tags), and compiles a timestamped CSV report.
  
- !!! Tested with inventory file in such yaml format:
- proxmox:
-    children:
-      proxmox_dc1:
-        children:
-          proxmox_dc1_cluster1:
-            hosts:
-              proxmox-01.dc1.wb-bank.ru:
-         proxmox_dc1_cluster2:
-        children:
-          proxmox_dc2_cluster1:
-            hosts:
-              proxmox-01.dc2.company.com:
- -----------------------------------------------------------------------------
+ !!! Tested with example inventory file in such yaml format: https://github.com/Leonid-Kanareykin/proxmox-vm-report/blob/main/inventory-example.yml
+ 
  Key features:
  - connecting using SSH to one or many hosts and cluster from yaml inventory file
  - generate CSV file with Ansible groups,Node,VMID,VM name,Status,CPU (cores),RAM allocated (GB),RAM used (GB),All disks size (GB),OS Type,OS Version (agent),Pool,Tags
@@ -31,3 +19,10 @@
  - Adds a header row with user‑friendly column names
  - No temporary files on the control node – everything assembled in memory
  =============================================================================
+
+### To run on all inventory
+ansible-playbook -i inventory-example.yml /playbooks/pve-vm-report-latest.yml
+
+### To run on some clusters or one cluster
+ansible-playbook -i inventory-example.yml /playbooks/pve-vm-report-latest.yml --limit proxmox_dc1_cluster1,cluster2_pve_dc2
+
